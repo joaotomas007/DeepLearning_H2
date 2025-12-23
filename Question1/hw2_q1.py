@@ -21,7 +21,13 @@ from sklearn.metrics import accuracy_score
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Using device: {device}")
 
+
+# Hyperparameters
+epochs = 200
+batch_size = 64
+lr = 0.001
 
 # Data Loading
 
@@ -46,7 +52,20 @@ total_start = time.time()
 
 def train_epoch(loader, model, criterion, optimizer):
     
-    ### YOUR CODE HERE ###
+    model.train()
+    total_loss = 0.0
+    
+    for imgs, labels in loader:
+        imgs, labels = imgs.to(device), labels.squeeze().long().to(device)
+        
+        optimizer.zero_grad()
+        outputs = model(imgs)
+        loss = criterion(outputs, labels)
+        
+        loss.backward()
+        optimizer.step()
+        
+        total_loss += loss.item()
 
     return total_loss / len(loader)
 
@@ -84,10 +103,45 @@ val_loader   = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 test_loader  = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
 # initialize the model
-# get an optimizer
-# get a loss criterion
+class ConvNet(nn.Module):
+    def __init__(self):
+        super(ConvNet, self).__init__()
+        
+        self.layer1 = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1),
+            nn.ReLU()
+        )
+        self.layer2 = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU()
+        )
+        self.layer3 = nn.Sequential(
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+            nn.ReLU()
+        )
+        
+        self.fc1 = nn.Linear(128 * 28 * 28, 256)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(256, 8) 
 
-### YOUR CODE HERE ###
+    def forward(self, x):
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        
+        x = x.view(x.size(0), -1) # Flatten
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        return x
+
+model = ConvNet().to(device)
+
+# get a loss criterion
+criterion = nn.CrossEntropyLoss()
+
+# get an optimizer
+optimizer = optim.Adam(model.parameters(), lr=lr)
 
 # training loop
 ### you can use the code below or implement your own loop ###
