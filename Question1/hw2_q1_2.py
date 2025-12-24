@@ -15,19 +15,10 @@ print(f"MedMNIST v{medmnist.__version__} @ {medmnist.HOMEPAGE}")
 def get_loader(split, batch_size=64):
     data_flag = 'bloodmnist'
     info = INFO[data_flag]
-    
-    # Preprocessing based on the homework description:
-    # "The source images with resolution 3 x 360 x 363 pixels are center-cropped into 3 x 200 x 200, 
-    # and then resized into 3 x 28 x 28."
-    # Note: MedMNIST usually provides pre-resized 28x28 images. 
-    # If using the standard medmnist library, the images are already 28x28.
-    # We will use ToTensor() and Normalize as standard practice.
-    
     data_transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize(mean=[.5], std=[.5])
     ])
-
     dataset = BloodMNIST(split=split, transform=data_transform, download=True)
     loader = data.DataLoader(dataset=dataset, batch_size=batch_size, shuffle=(split == 'train'))
     return loader
@@ -37,39 +28,37 @@ class Net(nn.Module):
         super(Net, self).__init__()
         self.use_softmax = use_softmax
         
-        # 1. Conv layer: 3 -> 32, k=3, s=1, p=1 + ReLU
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=1, padding=1)
+        # 1. Conv + ReLU + MaxPool
+        self.conv1 = nn.Conv2d(3, 32, 3, 1, 1)
         self.relu1 = nn.ReLU()
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
         
-        # 2. Conv layer: 32 -> 64, k=3, s=1, p=1 + ReLU
-        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1)
+        # 2. Conv + ReLU + MaxPool
+        self.conv2 = nn.Conv2d(32, 64, 3, 1, 1)
         self.relu2 = nn.ReLU()
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
         
-        # 3. Conv layer: 64 -> 128, k=3, s=1, p=1 + ReLU
-        self.conv3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1)
+        # 3. Conv + ReLU + MaxPool
+        self.conv3 = nn.Conv2d(64, 128, 3, 1, 1)
         self.relu3 = nn.ReLU()
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
         
-        # Flatten size calculation:
-        # Input: 3 x 28 x 28
-        # After conv1 (same padding): 32 x 28 x 28
-        # After conv2 (same padding): 64 x 28 x 28
-        # After conv3 (same padding): 128 x 28 x 28
-        self.flatten_size = 128 * 28 * 28
+        # Dimension calc:
+        # 28x28 -> pool -> 14x14
+        # 14x14 -> pool -> 7x7
+        # 7x7   -> pool -> 3x3 (floor(7/2))
+        self.flatten_size = 128 * 3 * 3 # = 1152
         
-        # 4. Linear: 256 output features + ReLU
         self.fc1 = nn.Linear(self.flatten_size, 256)
         self.relu4 = nn.ReLU()
-        
-        # 5. Linear: number of classes (8 for BloodMNIST)
-        # "followed by an output WITH and WITHOUT a Softmax layer"
         self.fc2 = nn.Linear(256, 8)
 
     def forward(self, x):
-        x = self.relu1(self.conv1(x))
-        x = self.relu2(self.conv2(x))
-        x = self.relu3(self.conv3(x))
+        x = self.pool1(self.relu1(self.conv1(x)))
+        x = self.pool2(self.relu2(self.conv2(x)))
+        x = self.pool3(self.relu3(self.conv3(x)))
         
-        x = x.view(x.size(0), -1) # Flatten
+        x = x.view(x.size(0), -1) 
         
         x = self.relu4(self.fc1(x))
         x = self.fc2(x)
@@ -84,8 +73,6 @@ def train_model(use_softmax, epochs=200):
     print(f"Training on {device}, Use Softmax: {use_softmax}")
     
     model = Net(use_softmax=use_softmax).to(device)
-    
-    # "optim.Adam(), the nn.CrossEntropyLoss() function, batch size of 64, and learning rate of 0.001"
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     criterion = nn.CrossEntropyLoss()
     
@@ -104,7 +91,6 @@ def train_model(use_softmax, epochs=200):
         running_loss = 0.0
         for inputs, targets in train_loader:
             inputs, targets = inputs.to(device), targets.to(device)
-            # targets from medmnist are (N, 1), need (N,) for CrossEntropyLoss
             targets = targets.squeeze().long()
             
             optimizer.zero_grad()
@@ -133,7 +119,7 @@ def train_model(use_softmax, epochs=200):
         val_acc = 100 * val_correct / val_total
         val_accuracies.append(val_acc)
         
-        # Test (Evaluating test set at every epoch as per instructions)
+        # Test
         test_correct = 0
         test_total = 0
         with torch.no_grad():
@@ -158,50 +144,46 @@ def train_model(use_softmax, epochs=200):
 
 def plot_results(res_logits, res_softmax):
     epochs = range(1, 201)
-    
     train_loss_logits, val_acc_logits, test_acc_logits = res_logits
     train_loss_softmax, val_acc_softmax, test_acc_softmax = res_softmax
     
     plt.figure(figsize=(18, 5))
     
-    # 1. Training Loss
     plt.subplot(1, 3, 1)
-    plt.plot(epochs, train_loss_logits, label='Without Softmax (Logits)')
-    plt.plot(epochs, train_loss_softmax, label='With Softmax')
-    plt.title('Training Loss')
+    plt.plot(epochs, train_loss_logits, label='Logits + MaxPool')
+    plt.plot(epochs, train_loss_softmax, label='Softmax + MaxPool')
+    plt.title('Training Loss (MaxPooling)')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.legend()
     
-    # 2. Validation Accuracy
     plt.subplot(1, 3, 2)
-    plt.plot(epochs, val_acc_logits, label='Without Softmax (Logits)')
-    plt.plot(epochs, val_acc_softmax, label='With Softmax')
-    plt.title('Validation Accuracy')
+    plt.plot(epochs, val_acc_logits, label='Logits + MaxPool')
+    plt.plot(epochs, val_acc_softmax, label='Softmax + MaxPool')
+    plt.title('Validation Accuracy (MaxPooling)')
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy (%)')
     plt.legend()
     
-    # 3. Test Accuracy
     plt.subplot(1, 3, 3)
-    plt.plot(epochs, test_acc_logits, label='Without Softmax (Logits)')
-    plt.plot(epochs, test_acc_softmax, label='With Softmax')
-    plt.title('Test Accuracy')
+    plt.plot(epochs, test_acc_logits, label='Logits + MaxPool')
+    plt.plot(epochs, test_acc_softmax, label='Softmax + MaxPool')
+    plt.title('Test Accuracy (MaxPooling)')
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy (%)')
     plt.legend()
     
     plt.tight_layout()
-    plt.savefig('results_q1.png')
-    print("Plots saved to 'results_q1.png'")
+    plt.savefig('results_q1_2.png')
+    print("Plots saved to 'results_q1_2.png'")
 
 if __name__ == '__main__':
-    # Experiment 1: Without Softmax (Logits)
-    print("--- Starting Experiment 1: Without Softmax (Logits) ---")
+    # Experiment 1: Without Softmax (Correct)
+    print("--- Starting Q1.2 Experiment 1: Without Softmax (Logits) + MaxPool ---")
     results_logits = train_model(use_softmax=False, epochs=200)
     
-    # Experiment 2: With Softmax
-    print("\n--- Starting Experiment 2: With Softmax ---")
+    # Experiment 2: With Softmax (Incorrect)
+    print("\n--- Starting Q1.2 Experiment 2: With Softmax + MaxPool ---")
     results_softmax = train_model(use_softmax=True, epochs=200)
     
     plot_results(results_logits, results_softmax)
