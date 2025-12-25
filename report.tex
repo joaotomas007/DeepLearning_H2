@@ -1,0 +1,141 @@
+\documentclass[10pt, twocolumn]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=0.8in]{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{titlesec}
+
+% Title formatting to look like a paper
+\title{\vspace{-2cm}\textbf{Deep Learning (IST, 2025-26) - Homework 2}}
+\author{Group Members: [Student Name 1], [Student Name 2], [Student Name 3]}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section*{Question 1: Image Classification with CNNs}
+
+\subsection*{1.1 Simple Convolutional Network}
+
+\subsubsection*{Implementation Details}
+We implemented a Convolutional Neural Network (CNN) to classify images from the BloodMNIST dataset. The architecture follows the specifications:
+\begin{itemize}
+    \item \textbf{Conv Block 1}: 3 input channels $\to$ 32 output channels, kernel $3\times3$, stride 1, padding 1 + ReLU.
+    \item \textbf{Conv Block 2}: 32 $\to$ 64 output channels, kernel $3\times3$, stride 1, padding 1 + ReLU.
+    \item \textbf{Conv Block 3}: 64 $\to$ 128 output channels, kernel $3\times3$, stride 1, padding 1 + ReLU.
+    \item \textbf{Flatten}: Since no pooling was used, the spatial dimensions remained $28 \times 28$. The flattened feature vector has size $128 \times 28 \times 28 = 100,352$.
+    \item \textbf{Linear Layers}: A fully connected layer mapping $100,352 \to 256$ features (ReLU), followed by a final layer mapping $256 \to 8$ classes.
+\end{itemize}
+
+\textbf{Training Setup:}
+\begin{itemize}
+    \item \textbf{Optimizer}: Adam ($lr=0.001$)
+    \item \textbf{Loss Function}: \texttt{nn.CrossEntropyLoss}
+    \item \textbf{Epochs}: 200
+    \item \textbf{Batch Size}: 64
+\end{itemize}
+
+\subsubsection*{Comparison: With vs. Without Softmax Layer}
+We conducted two experiments to verify the correct usage of the loss function:
+\begin{enumerate}
+    \item \textbf{Without Softmax (Logits)}: The model outputs raw scores. \texttt{nn.CrossEntropyLoss} applies \texttt{LogSoftmax} internally.
+    \item \textbf{With Softmax}: The model applies \texttt{Softmax} before the loss function. This results in \texttt{LogSoftmax(Softmax(x))}.
+\end{enumerate}
+
+\setlength{\tabcolsep}{4pt}
+\begin{table}[h]
+    \centering
+    \small
+    \caption{Comparison of Logits vs. Softmax}
+    \begin{tabular}{lccc}
+        \toprule
+        \textbf{Metric} & \textbf{No Softmax} & \textbf{With Softmax} \\
+        \midrule
+        \textbf{Convergence} & Fast, stable ($\approx 0.0$) & Stalled ($\approx 1.5$) \\
+        \textbf{Test Accuracy} & \textbf{$\approx$ 93.25\%} & \textbf{$\approx$ 68.78\%} \\
+        \textbf{Stability} & Stable & Unstable (Spikes) \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{Question1/results_q1.png}
+    \caption{Training Loss, Validation and Test Accuracy for Simple CNN (Q1.1)}
+    \label{fig:q1_results}
+\end{figure}
+
+\textbf{Discussion of Results and "Spikes":}
+The model trained with the \textbf{Softmax layer} performed significantly worse (69\% vs 93\%).
+\begin{itemize}
+    \item \textbf{Optimization Failure}: The loss stalled at $\approx 1.5$ because the double application of Softmax restricts the inputs to the loss function to the interval [0,1]. The optimizer struggles because gradients vanish or become distorted near the boundaries.
+    \item \textbf{The Spikes}: The "With Softmax" accuracy graph shows violent drops. This occurs because the optimizer builds momentum trying to force the Softmax output beyond 1.0. When weights shift slightly, predictions collapse (e.g., becoming uniform), causing accuracy to plummet before recovery.
+\end{itemize}
+
+\subsection*{1.2 Impact of MaxPool2d}
+
+\subsubsection*{Implementation Changes}
+We modified the network by adding a \texttt{nn.MaxPool2d(kernel\_size=2, stride=2)} layer after every ReLU activation in the convolutional blocks.
+
+\textbf{Architecture Impact:}
+\begin{itemize}
+    \item \textbf{Dimensionality Reduction}: Spatial resolution is halved at each block ($28 \to 14 \to 7 \to 3$).
+    \item \textbf{Parameter Count}: The input to the first linear layer is reduced from $100,352$ to \textbf{$1,152$}.
+    \begin{itemize}
+        \item Q1.1 Parameters (FC1): $\approx 25.6$ Million.
+        \item Q1.2 Parameters (FC1): $\approx 0.3$ Million.
+    \end{itemize}
+\end{itemize}
+
+\subsubsection*{Analysis of MaxPooling Impact}
+We repeated the experiments (Logits vs Softmax) with the new architecture.
+
+\textbf{1. Effectiveness (Accuracy)}
+\begin{itemize}
+    \item \textbf{Logits (Best)}: Accuracy improved from \textbf{93.25\%} (Q1.1) to \textbf{94.39\%} (Q1.2).
+    \item MaxPooling introduces \textbf{translation invariance} and acts as a regularizer, reducing overfitting.
+\end{itemize}
+
+\textbf{2. Efficiency (Training Time \& Compute)}
+\begin{itemize}
+    \item \textbf{Training Time}: Q1.1 took \textbf{$\approx$ 1210s}, while Q1.2 took \textbf{$\approx$ 765s} (\textbf{$\approx$ 37\% reduction}).
+    \item \textbf{Computational Cost}: The \textbf{98\% reduction} in the first dense layer's weights drastically reduces memory usage and gradient computation time.
+\end{itemize}
+
+\textbf{3. Stability (Why did the spikes disappear?)}
+In the Q1.2 "With Softmax" experiment, the violent spikes disappeared (though accuracy was still lower at $\approx 85.9\%$).
+\begin{itemize}
+    \item \textbf{Reason}: Q1.1 had $\approx 25$M parameters; instability propagates explosively.
+    \item \textbf{Constrained Space}: Q1.2 has only $\approx 300$k parameters. This constraint stabilizes the optimization landscape, preventing wild swings even with the broken gradient.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{Question1/results_q1_2.png}
+    \caption{Training Loss, Validation and Test Accuracy with MaxPooling (Q1.2)}
+    \label{fig:q1_2_results}
+\end{figure}
+
+\subsubsection*{Conclusion}
+\begin{enumerate}
+    \item \textbf{Softmax vs Logits}: Never apply Softmax before \texttt{CrossEntropyLoss}. It creates instability and degrades accuracy.
+    \item \textbf{MaxPooling}: Highly beneficial. Increases effectiveness (+1.14\% Acc) and efficiency (98\% fewer parameters).
+\end{enumerate}
+
+\section*{Question 2: RBP Interaction Prediction}
+
+\subsection*{2.1 Two Architectures}
+\textit{[Placeholder: Justify choice of models (e.g., CNN, RNN, Transformer). Specify hyperparameters and optimization strategy. Provide plots for loss on train/val. Compare performance.]}
+
+\subsection*{2.2 Attention Mechanism}
+\textit{[Placeholder: Specify attention implementation (self-attention, attention-pooling) and heads. Explain expectations. Plots for loss with/without attention. Compare test performance.]}
+
+\subsection*{2.3 Multi-Protein Generalization}
+\textit{[Placeholder: Discuss modifications for multi-protein setting: data/labels, architecture, training/eval protocol. Discuss benefits and challenges.]}
+
+\end{document}
