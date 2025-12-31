@@ -127,15 +127,79 @@ In the Q1.2 "With Softmax" experiment, the violent spikes disappeared (though ac
     \item \textbf{MaxPooling}: Highly beneficial. Increases effectiveness (+1.14\% Acc) and efficiency (98\% fewer parameters).
 \end{enumerate}
 
+
 \section*{Question 2: RBP Interaction Prediction}
 
 \subsection*{2.1 Two Architectures}
-\textit{[Placeholder: Justify choice of models (e.g., CNN, RNN, Transformer). Specify hyperparameters and optimization strategy. Provide plots for loss on train/val. Compare performance.]}
+
+\subsubsection*{Model Selection and Justification}
+To predict the binding affinity between the RBFOX1 protein and RNA sequences, we selected two complementary Deep Learning architectures: a 1D CNN and a Bi-LSTM. The CNN was chosen for its translation invariance and efficiency in local feature extraction, enabling the detection of consensus motifs (k-mers) regardless of their position within the sequence, which are subsequently refined by a downstream MLP classifier. Conversely, the Bi-LSTM was implemented to capture the sequential nature and global context of the data; by processing information bidirectionally, the model infers long-term dependencies and structural relationships between distant nucleotides, overcoming the memory limitations of traditional RNNs. We prioritized these architectures over more complex attention-based models (e.g., Transformers) because, given the short sequence length (41 nt), CNNs and LSTMs offer the optimal trade-off between computational efficiency and predictive capacity, avoiding the unnecessary complexity and overfitting risks associated with larger models.
+
+\subsubsection*{Hyperparameter Tuning}
+Regarding hyperparameter optimization, we first selected a CNN kernel size of 12. Given that the RBFOX1 consensus motif ('UGCAUG') has a length of 6, a kernel of 12 allows the model to capture the core motif together with sufficient flanking context. For the training duration, we observed that the recurrent architecture converged slower than the convolutional one; therefore, we extended the LSTM training to 50 epochs to ensure full convergence, while the CNN required only 25. In terms of model capacity, we increased the LSTM hidden dimension to 64, as this added complexity yielded better generalization than the initial 32 units. In contrast, for the CNN, we maintained 32 filters, as increasing this number resulted in overfitting without performance gains. Finally, we experimented with different learning rates but retained the default 0.001, as lower values did not yield significant improvements.
+
+\subsubsection*{Validation and Loss Plots}
+% --- IMAGENS DA CNN (LINHA 1) ---
+\begin{figure}[H]
+    \centering
+    % Loss à esquerda, Spearman à direita
+    \includegraphics[width=0.48\linewidth]{Question2/loss_curve_CNN.png}
+    \includegraphics[width=0.48\linewidth]{Question2/spearman_curve_CNN.png}
+    \caption{\textbf{CNN Results (Kernel=12, Filters=32)}: Training/Validation Loss (Left) and Spearman Correlation (Right). The model shows quick convergence, with validation loss stabilizing around 0.43 and Spearman correlation reaching a plateau of approximately 0.577 by epoch 15.}
+    \label{fig:cnn_results}
+\end{figure}
+
+% --- IMAGENS DA LSTM (LINHA 2) ---
+\begin{figure}[H]
+    \centering
+    % Loss à esquerda, Spearman à direita
+    \includegraphics[width=0.48\linewidth]{Question2/loss_curve_LSTM.png}
+    \includegraphics[width=0.48\linewidth]{Question2/spearman_curve_LSTM.png}
+    \caption{\textbf{Bi-LSTM Results (Hidden=64, Epochs=50)}: Training/Validation Loss (Left) and Spearman Correlation (Right). The validation loss decreases steadily, and the Spearman correlation achieves a superior peak of approximately 0.650 around epoch 45.}
+    \label{fig:lstm_results}
+\end{figure}
+
+\subsubsection*{Performance Analysis}
+The comparative analysis reveals that the Bi-LSTM model outperformed the CNN architecture, achieving a higher peak Spearman correlation ($\approx 0.6485$ versus $\approx 0.577$). While we initially hypothesized that the CNN would be highly effective due to the strong local dependence of RBFOX1 binding on the specific 'UGCAUG' motif, the results indicate that local pattern matching alone is insufficient for optimal prediction. This outcome suggests that binding affinity is significantly modulated by the global sequence context and potential RNA secondary structures; unlike the CNN, which is restricted to a local receptive field defined by its kernel size, the bidirectional LSTM successfully captured these long-range dependencies, processing the sequence as a holistic structure rather than a collection of isolated fragments.
 
 \subsection*{2.2 Attention Mechanism}
-\textit{[Placeholder: Specify attention implementation (self-attention, attention-pooling) and heads. Explain expectations. Plots for loss with/without attention. Compare test performance.]}
+\subsubsection*{Implementation and Justification}
+To extend the Bi-LSTM architecture, we implemented an Attention Pooling mechanism rather than a multi-headed self-attention block. Given that the binding of RBFOX1 is driven by specific, localized motifs (e.g., 'UGCAUG'), a complex multi-head architecture would likely introduce unnecessary parameters and overfitting risks for such short sequences (41 nt). Instead, we employed a single attention head that computes a scalar importance score for each time step using a learnable linear projection followed by a Softmax normalization. This allows the model to calculate a context vector as a weighted sum of the LSTM hidden states, effectively learning to 'highlight' the relevant motif positions while suppressing the background noise of non-interacting nucleotides.
+
+\subsubsection*{Expecations}
+We hypothesized that integrating an attention mechanism would primarily impact the efficiency and stability of the training process rather than strictly increasing the upper bound of the Spearman correlation. By providing the network with a direct mechanism to focus on the binding motif, we expected the model to converge significantly faster, as the gradient signal could flow directly to the relevant inputs without degrading over time steps. Furthermore, we anticipated a reduction in the final validation loss, as the ability to assign near-zero weights to irrelevant sequence padding allows the model to filter out noise that might otherwise confuse a standard LSTM, leading to more confident and precise affinity predictions.
+
+\subsubsection*{Validation and Loss Plots}
+\begin{figure}[H]
+    \centering
+    % Linha 1: Baseline (Sem Atenção)
+    \includegraphics[width=0.48\linewidth]{Question2/spearman_curve_LSTM.png}
+    \includegraphics[width=0.48\linewidth]{Question2/loss_curve_LSTM.png}
+    
+    % Linha 2: Com Atenção (Com Atenção)
+    \includegraphics[width=0.48\linewidth]{Question2/spearman_curve_LSTM_Attn.png}
+    \includegraphics[width=0.48\linewidth]{Question2/loss_curve_LSTM_Attn.png}
+    
+    \caption{\textbf{Visual Comparison (Top: Baseline, Bottom: Attention)}. 
+    Note how the Spearman curve in the bottom row (Attention) shoots up immediately in the first 10 epochs, whereas the top row (Baseline) takes a gradual slope. The Loss (Right) also settles at a lower value with Attention.}
+    \label{fig:comparison_grid}
+\end{figure}
+
+\subsubsection*{Results \& Comparison}
+The incorporation of the Attention Pooling mechanism altered the learning dynamics but did not surpass the performance ceiling established by the baseline model.
+
+\begin{enumerate}
+    \item \textbf{Convergence Speed (Improved):} The most notable benefit was the acceleration of early learning. The Attention model crossed the significant Spearman correlation threshold of 0.60 as early as \textbf{Epoch 9} (0.605), whereas the baseline Bi-LSTM typically required 12-15 epochs to reach this level. This confirms that the attention mechanism successfully directed gradients to the relevant motifs faster.
+    
+    \item \textbf{Peak Performance (Similar):} The maximum Spearman correlation achieved was \textbf{0.650} (Epoch 44), which is virtually identical to the baseline model. This strongly suggests that the predictive limit is constrained by the information content of the dataset (aleatoric uncertainty) rather than the model's capacity.
+    
+    \item \textbf{Generalization (Slight Degradation):} Interestingly, the final validation loss for the Attention model was slightly higher ($\approx 0.356$) compared to the baseline ($\approx 0.338$), despite the training loss being lower ($0.19$ vs $0.20$). This indicates that the added parameters from the attention layer led to mild \textbf{overfitting}, where the model began to memorize noise in the training set rather than generalizing better.
+\end{enumerate}
+
+\textbf{Conclusion:} While Attention Pooling accelerated the initial detection of binding motifs, the simpler Bi-LSTM baseline proved to be more robust and equally accurate for this specific dataset and sequence length.
 
 \subsection*{2.3 Multi-Protein Generalization}
 \textit{[Placeholder: Discuss modifications for multi-protein setting: data/labels, architecture, training/eval protocol. Discuss benefits and challenges.]}
 
 \end{document}
+
