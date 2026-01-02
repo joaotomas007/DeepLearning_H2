@@ -1,0 +1,242 @@
+\documentclass[11pt]{article}
+\usepackage[final]{acl}
+
+\usepackage{booktabs}
+\usepackage{graphicx}
+
+% Standard package includes
+\usepackage{times}
+\usepackage{latexsym}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+
+\usepackage{microtype}
+\usepackage{inconsolata}
+
+% Float management (important for ACL two-column)
+\usepackage{placeins}
+
+% Allow LaTeX to place floats more flexibly (reduces white space)
+\setcounter{topnumber}{2}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{4}
+\renewcommand{\topfraction}{0.90}
+\renewcommand{\bottomfraction}{0.80}
+\renewcommand{\textfraction}{0.08}
+\renewcommand{\floatpagefraction}{0.80}
+
+\title{DL Homework 2}
+
+\author{
+\textbf{Jo\~ao Tom\'as de Almeida}\\
+\textbf{Santos Antunes Gomes}\\
+106204\\
+\And
+\textbf{Maxence Jacques Marcel}\\
+\textbf{Bomo}\\
+116832\\
+\And
+\textbf{Gon\c{c}alo da Costa Miranda}\\
+\textbf{Teixeira de Jesus}\\
+96864\\
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This report summarizes the contributions of each group member: Jo\~ao worked on Question~1, Gon\c{c}alo on Questions~2.1 and~2.2, and Maxence on Question~2.3.
+\end{abstract}
+
+% ======================
+\section{Question 1}
+
+\subsubsection*{1.1 Simple Convolutional Network}
+
+\subsubsection*{Implementation Details}
+We implemented a Convolutional Neural Network (CNN) to classify images from the BloodMNIST dataset. The architecture follows the specifications:
+\begin{itemize}
+    \item \textbf{Conv Block 1}: 3 input channels $\to$ 32 output channels, kernel $3\times3$, stride 1, padding 1 + ReLU.
+    \item \textbf{Conv Block 2}: 32 $\to$ 64 output channels, kernel $3\times3$, stride 1, padding 1 + ReLU.
+    \item \textbf{Conv Block 3}: 64 $\to$ 128 output channels, kernel $3\times3$, stride 1, padding 1 + ReLU.
+    \item \textbf{Flatten}: Since no pooling was used, the spatial dimensions remained $28 \times 28$. The flattened feature vector has size $128 \times 28 \times 28 = 100,352$.
+    \item \textbf{Linear Layers}: A fully connected layer mapping $100,352 \to 256$ features (ReLU), followed by a final layer mapping $256 \to 8$ classes.
+\end{itemize}
+
+\textbf{Training Setup:}
+\begin{itemize}
+    \item \textbf{Optimizer}: Adam ($lr=0.001$)
+    \item \textbf{Loss Function}: \texttt{nn.CrossEntropyLoss}
+    \item \textbf{Epochs}: 200
+    \item \textbf{Batch Size}: 64
+\end{itemize}
+
+\subsubsection*{Comparison: With vs. Without Softmax Layer}
+We conducted two experiments to verify the correct usage of the loss function:
+\begin{enumerate}
+    \item \textbf{Without Softmax (Logits)}: The model outputs raw scores. \texttt{nn.CrossEntropyLoss} applies \texttt{LogSoftmax} internally.
+    \item \textbf{With Softmax}: The model applies \texttt{Softmax} before the loss function. This results in \texttt{LogSoftmax(Softmax(x))}.
+\end{enumerate}
+
+\setlength{\tabcolsep}{4pt}
+\begin{table}[t]
+    \centering
+    \small
+    \caption{Comparison of Logits vs. Softmax}
+    \begin{tabular}{lccc}
+        \toprule
+        \textbf{Metric} & \textbf{No Softmax} & \textbf{With Softmax} \\
+        \midrule
+        \textbf{Convergence} & Fast, stable ($\approx 0.0$) & Stalled ($\approx 1.5$) \\
+        \textbf{Test Accuracy} & \textbf{$\approx$ 93.25\%} & \textbf{$\approx$ 68.78\%} \\
+        \textbf{Stability} & Stable & Unstable (Spikes) \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{figure*}[!t]
+    \centering
+    \includegraphics[width=\textwidth]{pictures/results_q1.png}
+    \caption{Training loss and accuracy for the simple CNN.}
+\end{figure*}
+
+\textbf{Discussion of Results and ``Spikes'':}
+The model trained with the \textbf{Softmax layer} performed significantly worse (69\% vs 93\%).
+\begin{itemize}
+    \item \textbf{Optimization Failure}: The loss stalled at $\approx 1.5$ because the double application of Softmax restricts the inputs to the loss function to the interval [0,1]. The optimizer struggles because gradients vanish or become distorted near the boundaries.
+    \item \textbf{The Spikes}: The ``With Softmax'' accuracy graph shows violent drops. This occurs because the optimizer builds momentum trying to force the Softmax output beyond 1.0. When weights shift slightly, predictions collapse (e.g., becoming uniform), causing accuracy to plummet before recovery.
+\end{itemize}
+
+\subsubsection*{1.2 Impact of MaxPool2d}
+
+\subsubsection*{Implementation Changes}
+We modified the network by adding a \texttt{nn.MaxPool2d(kernel\_size=2, stride=2)} layer after every ReLU activation in the convolutional blocks.
+
+\textbf{Architecture Impact:}
+\begin{itemize}
+    \item \textbf{Dimensionality Reduction}: Spatial resolution is halved at each block ($28 \to 14 \to 7 \to 3$).
+    \item \textbf{Parameter Count}: The input to the first linear layer is reduced from $100,352$ to \textbf{$1,152$}.
+    \begin{itemize}
+        \item Q1.1 Parameters (FC1): $\approx 25.6$ Million.
+        \item Q1.2 Parameters (FC1): $\approx 0.3$ Million.
+    \end{itemize}
+\end{itemize}
+
+\subsubsection*{Analysis of MaxPooling Impact}
+We repeated the experiments (Logits vs Softmax) with the new architecture.
+
+\textbf{1. Effectiveness (Accuracy)}
+\begin{itemize}
+    \item \textbf{Logits (Best)}: Accuracy improved from \textbf{93.25\%} (Q1.1) to \textbf{94.39\%} (Q1.2).
+    \item MaxPooling introduces \textbf{translation invariance} and acts as a regularizer, reducing overfitting.
+\end{itemize}
+
+\textbf{2. Efficiency (Training Time \& Compute)}
+\begin{itemize}
+    \item \textbf{Training Time}: Q1.1 took \textbf{$\approx$ 1210s}, while Q1.2 took \textbf{$\approx$ 765s} (\textbf{$\approx$ 37\% reduction}).
+    \item \textbf{Computational Cost}: The \textbf{98\% reduction} in the first dense layer's weights drastically reduces memory usage and gradient computation time.
+\end{itemize}
+
+\textbf{3. Stability (Why did the spikes disappear?)}
+In the Q1.2 ``With Softmax'' experiment, the violent spikes disappeared (though accuracy was still lower at $\approx 85.9\%$).
+\begin{itemize}
+    \item \textbf{Reason}: Q1.1 had $\approx 25$M parameters; instability propagates explosively.
+    \item \textbf{Constrained Space}: Q1.2 has only $\approx 300$k parameters. This constraint stabilizes the optimization landscape, preventing wild swings even with the broken gradient.
+\end{itemize}
+
+\begin{figure*}[!t]
+    \centering
+    \includegraphics[width=\textwidth]{pictures/results_q1_2.png}
+    \caption{Training Loss, Validation and Test Accuracy with MaxPooling (Q1.2)}
+    \label{fig:q1_2_results}
+\end{figure*}
+
+\subsubsection*{Conclusion}
+\begin{enumerate}
+    \item \textbf{Softmax vs Logits}: Never apply Softmax before \texttt{CrossEntropyLoss}. It creates instability and degrades accuracy.
+    \item \textbf{MaxPooling}: Highly beneficial. Increases effectiveness (+1.14\% Acc) and efficiency (98\% fewer parameters).
+\end{enumerate}
+
+% Flush floats from Q1 before moving on (prevents lonely-figure pages)
+\FloatBarrier
+
+% ======================
+\section{Question 2}
+
+\subsection{}
+
+\subsubsection*{Model Selection and Justification}
+To predict the binding affinity between the RBFOX1 protein and RNA sequences, we selected two complementary Deep Learning architectures: a 1D CNN and a Bi-LSTM. The CNN was chosen for its translation invariance and efficiency in local feature extraction, enabling the detection of consensus motifs (k-mers) regardless of their position within the sequence, which are subsequently refined by a downstream MLP classifier. Conversely, the Bi-LSTM was implemented to capture the sequential nature and global context of the data; by processing information bidirectionally, the model infers long-term dependencies and structural relationships between distant nucleotides, overcoming the memory limitations of traditional RNNs. We prioritized these architectures over more complex attention-based models (e.g., Transformers) because, given the short sequence length (41 nt), CNNs and LSTMs offer the optimal trade-off between computational efficiency and predictive capacity, avoiding the unnecessary complexity and overfitting risks associated with larger models.
+
+\subsubsection*{Hyperparameter Tuning}
+Regarding hyperparameter optimization, we first selected a CNN kernel size of 12. Given that the RBFOX1 consensus motif ('UGCAUG') has a length of 6, a kernel of 12 allows the model to capture the core motif together with sufficient flanking context. For the training duration, we observed that the recurrent architecture converged slower than the convolutional one; therefore, we extended the LSTM training to 50 epochs to ensure full convergence, while the CNN required only 25. In terms of model capacity, we increased the LSTM hidden dimension to 64, as this added complexity yielded better generalization than the initial 32 units. In contrast, for the CNN, we maintained 32 filters, as increasing this number resulted in overfitting without performance gains. Finally, we experimented with different learning rates but retained the default 0.001, as lower values did not yield significant improvements.
+
+\subsubsection{First model.}
+Describe the first model, the hyperparameters you chose to vary, and the hyperparameters of the selected checkpoint. Provide requested plots.
+
+% Merge CNN + LSTM into a single wide figure (reduces float pressure dramatically)
+\begin{figure*}[!t]
+    \centering
+    \includegraphics[width=0.49\textwidth]{pictures/loss_curve_CNN.png}
+    \includegraphics[width=0.49\textwidth]{pictures/spearman_curve_CNN.png}\\
+    \includegraphics[width=0.49\textwidth]{pictures/loss_curve_LSTM.png}
+    \includegraphics[width=0.49\textwidth]{pictures/spearman_curve_LSTM.png}
+    \caption{\textbf{Training curves for CNN and Bi-LSTM.\\} 
+    \textbf{Top row (CNN, Kernel=12, Filters=32)}. The model converges quickly, with validation loss stabilizing around 0.43 and Spearman correlation reaching a plateau of approximately 0.577 by epoch 15.\\ 
+    \textbf{Bottom row (Bi-LSTM, Hidden=64, Epochs=50)}. The validation loss decreases steadily, and the Spearman correlation achieves a superior peak of approximately 0.650 around epoch 45.}
+    \label{fig:cnn_lstm_curves}
+\end{figure*}
+
+
+\subsubsection*{Performance Analysis}
+The comparative analysis reveals that the Bi-LSTM model outperformed the CNN architecture, achieving a higher peak Spearman correlation ($\approx 0.6485$ versus $\approx 0.577$). While we initially hypothesized that the CNN would be highly effective due to the strong local dependence of RBFOX1 binding on the specific 'UGCAUG' motif, the results indicate that local pattern matching alone is insufficient for optimal prediction. This outcome suggests that binding affinity is significantly modulated by the global sequence context and potential RNA secondary structures; unlike the CNN, which is restricted to a local receptive field defined by its kernel size, the bidirectional LSTM successfully captured these long-range dependencies, processing the sequence as a holistic structure rather than a collection of isolated fragments.
+
+\newpage
+
+\subsection{Attention Mechanism}
+\subsubsection*{Implementation and Justification}
+To extend the Bi-LSTM architecture, we implemented an Attention Pooling mechanism rather than a multi-headed self-attention block. Given that the binding of RBFOX1 is driven by specific, localized motifs (e.g., 'UGCAUG'), a complex multi-head architecture would likely introduce unnecessary parameters and overfitting risks for such short sequences (41 nt). Instead, we employed a single attention head that computes a scalar importance score for each time step using a learnable linear projection followed by a Softmax normalization. This allows the model to calculate a context vector as a weighted sum of the LSTM hidden states, effectively learning to 'highlight' the relevant motif positions while suppressing the background noise of non-interacting nucleotides.
+
+\subsubsection*{Expecations}
+We hypothesized that integrating an attention mechanism would primarily impact the efficiency and stability of the training process rather than strictly increasing the upper bound of the Spearman correlation. By providing the network with a direct mechanism to focus on the binding motif, we expected the model to converge significantly faster, as the gradient signal could flow directly to the relevant inputs without degrading over time steps. Furthermore, we anticipated a reduction in the final validation loss, as the ability to assign near-zero weights to irrelevant sequence padding allows the model to filter out noise that might otherwise confuse a standard LSTM, leading to more confident and precise affinity predictions.
+
+\vspace{3em}
+
+\begin{figure*}[!t]
+    \centering
+    \includegraphics[width=0.49\textwidth]{pictures/spearman_curve_LSTM.png}
+    \includegraphics[width=0.49\textwidth]{pictures/loss_curve_LSTM.png}\\
+    \includegraphics[width=0.49\textwidth]{pictures/spearman_curve_LSTM_Attn.png}
+    \includegraphics[width=0.49\textwidth]{pictures/loss_curve_LSTM_Attn.png}
+    \caption{\textbf{Visual Comparison (Top: Baseline, Bottom: Attention)}. 
+    Note how the Spearman curve in the bottom row (Attention) shoots up immediately in the first 10 epochs, whereas the top row (Baseline) takes a gradual slope. The Loss (Right) also settles at a lower value with Attention.}
+    \label{fig:comparison_grid}
+\end{figure*}
+
+\subsubsection*{Results \& Comparison}
+The incorporation of the Attention Pooling mechanism altered the learning dynamics but did not surpass the performance ceiling established by the baseline model.
+\begin{enumerate}
+    \item \textbf{Convergence Speed (Improved):} The most notable benefit was the acceleration of early learning. The Attention model crossed the significant Spearman correlation threshold of 0.60 as early as \textbf{Epoch 9} (0.605), whereas the baseline Bi-LSTM typically required 12-15 epochs to reach this level. This confirms that the attention mechanism successfully directed gradients to the relevant motifs faster.
+    \item \textbf{Peak Performance (Similar):} The maximum Spearman correlation achieved was \textbf{0.650} (Epoch 44), which is virtually identical to the baseline model. This strongly suggests that the predictive limit is constrained by the information content of the dataset (aleatoric uncertainty) rather than the model's capacity.
+    \item \textbf{Generalization (Slight Degradation):} Interestingly, the final validation loss for the Attention model was slightly higher ($\approx 0.356$) compared to the baseline ($\approx 0.338$), despite the training loss being lower ($0.19$ vs $0.20$). This indicates that the added parameters from the attention layer led to mild \textbf{overfitting}, where the model began to memorize noise in the training set rather than generalizing better.
+\end{enumerate}
+
+\textbf{Conclusion:} While Attention Pooling accelerated the initial detection of binding motifs, the simpler Bi-LSTM baseline proved to be more robust and equally accurate for this specific dataset and sequence length.
+
+\subsection{}
+\subsubsection{Proposed modifications}
+To extend the model to multiple RNA-binding proteins, the data must include pairs of RNA sequences and protein identities or features (e.g., protein IDs, amino-acid sequences, or learned embeddings), while the label remains the binding affinity. The model architecture should be adapted to jointly encode RNA and protein information, for instance using a dual-encoder design where one network processes the RNA sequence and another encodes the protein, followed by a fusion layer and a shared prediction head. The training objective can remain a regression loss over binding affinity, but the evaluation protocol should explicitly assess generalization by holding out entire proteins during validation or testing rather than random RNA--protein pairs.
+
+\subsubsection{Anticipated challenges and benefits}
+A key benefit of this multi-protein setup is improved generalization through shared representations of RNA--protein interactions, enabling accurate predictions for proteins with limited experimental data. However, a major challenge lies in the heterogeneity of binding mechanisms across different proteins, which increases task complexity and may lead to negative transfer if the model capacity or protein representations are insufficient.
+
+\FloatBarrier
+
+\section{Collaboration with other teams and use of AI tools}
+Briefly describe collaboration and AI tool usage here.
+
+\section{Conclusions}
+Brief summary.
+
+\end{document}
